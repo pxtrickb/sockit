@@ -6,7 +6,8 @@
         "examples/*"
     ],
     "scripts": {
-        "build": "npm run build --workspaces"
+        "build": "npm run build --workspaces",
+        "publish": "node publish-all.js"
     },
     "devDependencies": {
         "typescript": "^5.4.0"

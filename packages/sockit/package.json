@@ -1,0 +1,23 @@
+{
+    "name": "next-sockit",
+    "version": "0.1.2",
+    "description": "SocKit CLI - Real-time Next.js",
+    "author": {
+        "name": "Eranova",
+        "email": "contact@eranova.ro"
+    },
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/pxtrickb/sockit"
+    },
+    "bin": {
+        "sockit": "bin.js"
+    },
+    "dependencies": {
+        "@sockit/cli": "^0.1.0"
+    },
+    "scripts": {
+        "build": "echo \"No build needed\""
+    }
+}
