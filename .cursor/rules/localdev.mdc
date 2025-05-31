@@ -1,0 +1,105 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Here is the refactored **Local Development & Package Management** rule for **npm** (instead of `pnpm`):
+
+````md
+# Local Development & Package Management
+
+## Monorepo Setup
+
+This project is a monorepo using **npm workspaces**. All `@sockit/*` packages (e.g., `@sockit/server`, `@sockit/client`, `@sockit/types`, `@sockit/cli`) are developed **locally inside the same monorepo**.
+
+> ❗ Do **not** attempt to install any `@sockit/*` packages from the npm registry during local development.
+
+### ✅ CORRECT
+```bash
+npm install
+````
+
+This installs all dependencies and links local workspace packages automatically.
+
+### 🚫 INCORRECT
+
+```bash
+npm install @sockit/server
+```
+
+This will fail or incorrectly try to resolve to a published (non-local) version.
+
+During development, the agent should treat all `@sockit/*` packages as local and rely on workspace links. Workspaces are declared in the root `package.json`.
+
+---
+
+## Building Local Packages
+
+To build all packages in the correct order:
+
+```bash
+npm run build --workspaces
+```
+
+To build a single package:
+
+```bash
+npm run build --workspace=@sockit/server
+```
+
+Each package should have a `build` script in its `package.json`.
+
+---
+
+## Local Testing
+
+To test or demonstrate features locally:
+
+1. Create a test or sandbox app (e.g., in `/examples` or `/test`).
+2. Reference `@sockit/*` packages as workspace dependencies.
+3. Use:
+
+   ```bash
+   npm run dev
+   ```
+
+   or
+
+   ```bash
+   npm run dev --workspace=example-app
+   ```
+4. **Do not attempt to publish or install internal packages.**
+
+---
+
+## Publishing
+
+When ready to publish:
+
+1. Ensure the package's `package.json` includes:
+
+   * Valid `name`, `version`, `main`, and `types`.
+   * Proper ESM/CJS configuration.
+2. From the package directory:
+
+   ```bash
+   cd packages/server
+   npm publish --access public
+   ```
+
+> 🔒 Only publish after updating the version and verifying that the build completes successfully.
+
+Note: You cannot publish a version that already exists on npm. Use semantic versioning (e.g., `1.0.1`, `1.1.0`) and tag as needed.
+
+---
+
+## Summary
+
+* Use `npm install`, not `pnpm install`.
+* Never install `@sockit/*` packages from npm during development.
+* Use `npm run build --workspaces` to sync packages.
+* Publish manually from each package using `npm publish --access public`.
+
+```
+```
+

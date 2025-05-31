@@ -1,0 +1,381 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Designed & built by Eranova.
+contact@eranova.ro
+[[sockit.eranova.ro]]
+
+## Overview
+
+SocKit is a TypeScript-based addon for Next.js that introduces real-time, event-driven CRUD operations using Socket.IO. It provides a full-stack contract between frontend and backend through a structured system of event-based handlers, subscriptions, and client interaction layers. SocKit is divided into three packages:
+
+- `@sockit/server` — Socket.IO server runtime, event loader and subscriptions manager
+- `@sockit/client` — React context + hook for emitting, listening, and subscribing to events.
+- `@sockit/cli` — Tooling to add SocKit to a Next.js project, and run the SocKit server.
+- `@sockit/types` — All types that should be exposed to the user.
+
+---
+
+## Design Goals
+
+- Convention over configuration
+- Zero-runtime compilation: use ESBuild for direct `.ts` loading
+- Hot-reloadable server-side handlers (no restart needed)
+- Socket.IO-based event contract:
+	- `resource:action` - calling the action.
+	- `resource:action:response` - response sent to the socket that called the action.
+	- `resource:action:announce` - sent to all subscribed sockets when an action is called.
+	- `resource:subscribe` - request to subscribe to all actions of a resource
+	- `resource:subscribe:response` - response sent to a subscription request.
+	- `resource:unsubscribe` - unsubscribe from a resource
+- Type-safe and tree-shakable packages
+- JSDoc documentation for everything user-facing.
+- Developer extensibility and modular separation
+
+---
+
+## Folder Structure (Monorepo)
+
+```
+sockit/
+├── packages/
+│   ├── server/
+│   ├── client/
+│   ├── cli/
+│   └── types/
+├── tsconfig.base.json
+├── pnpm-workspace.yaml
+└── README.md (this file)
+```
+
+---
+
+## Package: `@sockit/server`
+
+### Responsibilities
+
+- Initialize and run a Socket.IO server
+- Load CRUD handler modules from a target `/events` directory
+- Dynamically re-import handler files on change (hot reload)
+- Emit and handle resource events based on convention
+- Manage client socket subscriptions
+- Use `sockit.json` for configuration (port, verbose mode)
+
+### Structure
+
+```
+packages/server/
+├── src/
+│   ├── index.ts                  # Main entrypoint, reads config and starts server
+│   ├── config.ts                 # Loads and validates sockit.json
+│   ├── loader/
+│   │   ├── resourceLoader.ts     # Uses esbuild to dynamically load ts modules
+│   │   └── watcher.ts            # Watches /events for changes and reloads
+│   ├── core/
+│   │   ├── server.ts             # Initializes and starts Socket.IO server
+│   │   ├── listeners.ts             # Registers listeners for all valid [resource]:[action] events
+│   │   └── subscriptions.ts      # Tracks socket.id subscriptions by event
+│   └── utils/
+│       └── logger.ts             # Optional verbose logging
+├── dist/
+```
+
+### Event Handler File Format
+
+Handlers are defined in `.ts` files located in `[userProjectRoot]/events/[resource].ts`.
+
+Each file may export any of the following named functions:
+
+```ts
+import type { CRUDResponse, CRUDActions } from '@sockit/types';
+
+export async function Create(data: any, socket: Socket): Promise<CRUDResponse> {}
+export async function CreateMany(data, socket): Promise<CRUDResponse> {}
+export async function Read(data, socket): Promise<CRUDResponse> {}
+export async function ReadMany(data, socket): Promise<CRUDResponse> {}
+export async function Update(data, socket): Promise<CRUDResponse> {}
+export async function UpdateMany(data, socket): Promise<CRUDResponse> {}
+export async function Delete(data, socket): Promise<CRUDResponse> {}
+export async function DeleteMany(data, socket): Promise<CRUDResponse> {}
+
+export function Subscribe(action: CRUDActions, data, socket): { success: boolean; message: string } {}
+```
+
+The server maps socket events like:
+
+- `user:Create` → `events/user.ts::Create()`
+- `post:ReadMany:subscribe` → call `Subscribe('ReadMany', data, socket)`, track socket.id
+- `comment:Update:unsubscribe` → remove socket.id from internal map
+
+### Subscription Behavior
+
+- Subscriptions stored in:
+  ```ts
+  type SubscriptionMap = Map<string, Set<string>>; // Map<eventKey, Set<socketId>>
+  ```
+- Announce events to each subscribed socket: triggered after successful mutations:
+  - `socket.emit("resource:Action:announce", result)`
+- Subscribe gate: uses exported `Subscribe()` response from each resource to authorize subscription.
+
+### Error handling
+
+Each handler CRUD function is free to do their own validations and return a `CRUDResponse` with `success: false` if it wants to error. But if the handler errors by itself the server runs the handler function in a try-catch block, so that the end user still received a `resource:event:response` event, with `success: false`
+
+```ts
+try {
+  const result = await handler(data, socket);
+  socket.emit(`${event}:response`, result);
+} catch (err) {
+  socket.emit(`${event}:response`, {
+    success: false,
+    message: err instanceof Error ? err.message : "Unknown error"
+  });
+}
+```
+
+### Config: `sockit.json`
+
+Located at project root.
+
+```json
+{
+  "port": 3333,
+  "verbose": true
+}
+```
+
+---
+
+## Package: `@sockit/client`
+
+### Responsibilities
+
+- Provides React context for SocKit socket
+- Exposes a `useSockit` hook to interact with events
+- Manages connection lifecycle, subscription and unsubscription
+- Type-safe event API contract
+
+### Runtime Structure
+
+```
+packages/client/
+├── src/
+│   ├── index.ts                 # Re-exports public API
+│   ├── SockitProvider.tsx       # Context & context provider for socket + state
+│   ├── useSockit.ts             # Hook that exposes emit/on/subscribe/unsubscribe
+│   ├── socket.ts                # Shared singleton socket.io-client instance
+├── dist/
+```
+
+### Hook API
+
+```ts
+const {
+  emit,                // EventFn
+  on,                  // (eventKey: string, cb: (data) => void)
+  subscribe,           // SubscribeFn
+  unsubscribe          // (resource: string)
+} = useSockit();
+```
+
+### Example Usage
+
+##### Subscriptions
+```tsx
+import { useSockit } from "@sockit/client";
+
+function PostsList() {
+  const { subscribe, unsubscribe } = useSockit();
+
+  useEffect(() => {
+    subscribe("posts", { password: 123 }, (action: string, data: Post) => {
+	    if (action === 'create') setPosts((prev) => [...prev, ...data])
+    });
+    
+    return () => {
+	    unsubscribe("posts");
+    }
+  }, []);
+}
+```
+
+##### Reading
+```ts
+import { useSockit } from "@sockit/client";
+
+function PostsList() {
+  const { emit } = useSockit();
+  const [posts, setPosts] = useState<Post[]>([]);
+
+  useEffect(() => {
+	emit("posts:readMany", { where: { status: 'published' } },
+		(response: CRUDResponse<Post[]>) => {
+			setPosts(response.data);
+		}
+	);
+
+	// Also subscribe to posts, so they get updated.
+	// ...
+  }, []);
+}
+```
+
+##### Creating
+```ts
+import { useSockit } from "@sockit/client";
+
+function NewPost() {
+	const { emit } = useSockit();
+	const [title, setTitle] = useState<String>('');
+	const [content, setContent] = useState<String>('');
+	const [status, setStatus] = useState<'loading' | 'error' | 'success' | ''>('');
+
+	handleSubmit() {
+		setStatus('loading');
+		emit('posts:create', { title, content}, (response: CRUDResponse) => {
+			if (response.success) {
+				setStatus('success');
+			} else {
+				setStatus('error');
+			}
+		})
+	}
+}
+```
+
+---
+
+## Package: `@sockit/cli`
+
+### Responsibilities
+
+- `sockit init`: Bootstraps the SocKit environment
+  - Installs `@sockit/server`, `@sockit/client`, `concurrently`
+  - Creates `/events` folder and stub resource
+  - Generates `sockit.json`
+  - Patches `package.json` scripts:
+    ```json
+    {
+      "dev": "concurrently --raw \"next dev\" \"sockit start\"",
+      "start": "concurrently --raw \"next start\" \"sockit start\""
+    }
+    ```
+- `sockit start`: Starts the SocKit server (used in concurrently)
+
+### Structure
+
+```
+packages/cli/
+├── src/
+│   ├── index.ts                    # CLI entrypoint
+│   ├── commands/
+│   │   ├── init.ts                 # Project setup
+│   │   └── start.ts                # Calls server entrypoint from @sockit/server
+│   ├── utils/
+│   │   ├── exec.ts
+│   │   ├── installDeps.ts
+│   │   ├── modifyPackageJson.ts
+│   │   └── createEventsFolder.ts
+│   └── constants.ts
+├── dist/
+```
+
+### CLI Usage
+
+```bash
+# Init
+npx sockit init
+
+# Dev
+npm run dev  # uses concurrently to run next + sockit
+```
+
+---
+
+## Event Lifecycle Summary
+
+```mermaid
+sequenceDiagram
+  participant Client
+  participant useSockit
+  participant Socket.IO
+  participant Server
+  participant /events/user.ts
+
+  Client->>useSockit: emit("posts:Create", data)
+  useSockit->>Socket.IO: emit
+  Socket.IO->>Server: socket.on("posts:Create")
+  Server->>/events/posts.ts: await Create(data, socket)
+  /events/posts.ts-->>Server: return result
+  Server-->>Socket.IO: callback(result)
+  Socket.IO-->>useSockit: result
+  useSockit-->>Client: result
+
+  Client->>useSockit: subscribe("posts", {})
+  useSockit->>Socket.IO: emit("posts:subscribe", data)
+  Socket.IO->>Server: socket.on("posts:subscribe")
+  Server->>/events/user.ts: Subscribe(data, socket)
+  /events/user.ts-->>Server: { success: true }
+  Server-->>Socket.IO: add socket.id to map
+```
+
+---
+
+## Package: `@sockit/cli`
+
+### Responsibilities
+- Central type definitions used across server, client, and user-defined handlers
+
+```ts
+// @sockit/server
+type CRUDResponse = {
+  success: boolean;
+  message?: string;
+  data?: any;
+};
+
+type CRUDSingularActions = 'Create' | 'Read' | 'Update' | 'Delete';
+type CRUDPluralActions = 'CreateMany' | 'ReadMany' | 'UpdateMany' | 'DeleteMany';
+type CRUDSubscribeActions = 'Subscribe' | 'Unsubscribe';
+type CRUDActions = CRUDSingularActions | CRUDPluralActions | CRUDSubscribeActions;
+
+
+// @sockit/client
+type EmitFn = <T = any, R = any>(
+  eventKey: string,
+  data: T,
+  callback?: (response: R) => void
+) => void;
+
+type SubscribeFn = <T = any>(
+  resource: string,
+  data: T,
+  callback: (action: string, data: any) => void
+) => void;
+```
+
+---
+
+## Conventions
+
+- Event name format: `resource:[action|:subscribe|:unsubscribe|:announce]`
+- All handler files are dynamically imported from `[projectRoot]/events/`
+- SocKit server does not manage DB or auth — that is delegated to handler logic
+- In the event format, every name is lowercase. Only in the event handler file, the crud functions are capitalized. (`posts:create`, `tasks:readMany`, etc...)
+
+---
+
+## Development Notes
+
+- Build system uses `pnpm`
+- All packages should be `typescript` + `JSDoc` annotated
+- Reusable types should be shared via `@sockit/types` if needed (optional package)
+
+---
+Designed & built by Eranova.
+[[sockit.eranova.ro]]
+
+---
+

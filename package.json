@@ -1,0 +1,14 @@
+{
+    "name": "sockit-monorepo",
+    "private": true,
+    "workspaces": [
+        "packages/*",
+        "examples/*"
+    ],
+    "scripts": {
+        "build": "npm run build --workspaces"
+    },
+    "devDependencies": {
+        "typescript": "^5.4.0"
+    }
+}

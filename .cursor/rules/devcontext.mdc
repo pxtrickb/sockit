@@ -1,0 +1,33 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# devcontext.mdc
+
+## Project Overview
+
+You are contributing to a **monorepo** that contains several interdependent packages. These packages together compose a single unified **Next.js addon** called **SocKit**.
+
+The SocKit addon is designed to provide real-time, event-driven CRUD operations and subscriptions using Socket.IO. It is composed of the following npm packages:
+
+- `@sockit/server` — Server-side handler and subscription logic
+- `@sockit/client` — React and client-side hook library
+- `@sockit/types` — Shared TypeScript types between client and server
+- `@sockit/cli` — Optional CLI tool for scaffolding or development support
+
+## Constraints and Requirements
+
+- This is a **published Next.js addon** that will be installed via `npm install`. All code must assume it will run in **external Next.js projects**, not just locally in this monorepo.
+- Do **not** use any **relative imports** (e.g., `../../types` or `../../../client`). Use fully-qualified imports like `@sockit/types`, `@sockit/server`, etc.
+- Ensure every package is **platform-agnostic**: it must work for **any Next.js project** on **any machine**, regardless of environment or deployment setup (e.g., Vercel, Docker, local dev).
+- Avoid hardcoded file paths, local configuration dependencies, or assumptions about file system layout beyond standard Next.js structure.
+- Design APIs, hooks, and event handlers to integrate cleanly with idiomatic React and Next.js conventions.
+- Prioritize developer ergonomics and DX: clear types, meaningful errors, sensible defaults.
+
+## Additional Notes
+
+- All packages are built and published from the monorepo using proper versioning and dependencies.
+- The addon should be tree-shakable, type-safe, and compatible with modern Next.js features (e.g., App Router, SSR, etc...).
+- Keep compatibility with the latest stable version of Next.js (unless otherwise specified).
+

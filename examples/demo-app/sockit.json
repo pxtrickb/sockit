@@ -1,0 +1,12 @@
+{
+  "url": "http://localhost",
+  "port": 3333,
+  "verbose": true,
+  "cors": {
+    "origin": "*",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  }
+}

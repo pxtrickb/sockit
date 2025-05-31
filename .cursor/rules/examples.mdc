@@ -1,0 +1,205 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+The following are examples of how SocKit is meant to be used:
+
+### Event handler for "Posts" resource.
+```ts
+import { CRUDResponse } from '@sockit/types';
+import { Socket } from 'socket.io-client';
+import { db } from '@/lib/database';
+
+export async function Create(data: any, socket: Socket): Promise<CRUDResponse> {
+	// Validate data passed from client.
+	if (!data.title || !data.content) {
+		return { success: false, message: 'Title or content unspecified.' }
+	}
+
+	// Example "fake" database driver. In a real project you can use Prisma, etc...
+	const post = await db.post.create({ data.title, data.content });
+	if (!post) {
+		return { success: false, message: 'Failed to create post.' }
+	}
+
+	// Returning `success: true` will also tell the server to emit the announcement
+	// to all subscribed sockets.
+	return { success: true, message: 'Post created.', data: post }
+}
+
+export async function Read(data: any, socket: Socket): Promise<CRUDResponse> {
+	if (!data.id) {
+		return { success: false, message: 'Unspecified post id.' }
+	}
+
+	const post = await db.post.findUnique({ where: {
+		id: data.id
+	} });
+	if (!post) {
+		return { success: false, message: 'Post not found.' }
+	}
+
+	return { success: true, message: 'Post found', data: post }
+}
+
+export async function Subscribe(data: any, socket: Socket): Promise<CRUDResponse> {
+	// In this example we pass the authentication session token from the cookie
+	// to validate that the user is signed in. 
+	if (!data.token) {
+		return { success: false, message: 'Unauthenticated.' }
+	}
+
+	const session = await db.session.finUnique({ where: {
+		token: data.token;
+	} });
+	if (!data.token) {
+		return { success: false, message: 'Invalid session.' }
+	}
+
+	// Returning `success: true` will enroll the socket into the server's
+	// subscription list, so they will be notified on new announcements.
+	return { success: true, message: 'Subscription authorized' }
+}
+
+```
+
+### Root layout.tsx
+```tsx
+import { ReactNode } from 'React';
+import { SocketProvider } from '@sockit/client';
+
+export default function RootLayout({ children}: { children: ReactNode}) { 
+
+return ( 
+	<html lang="en"> 
+		<body> 
+			{/* All children are wrapped in the SocKit provider. */}
+			{/* This provider MUST be in the top level, to avoid */}
+			{/* component re-rendering on route change. */}
+			<SockitProvider>
+				{children}
+			</SockitProvider>
+		</body>
+	</html> 
+)
+};
+```
+
+#### Posts list view
+```tsx
+'use client';
+import { useState } from 'React';
+import { Post } from '@lib/database';
+import { useSession } from '@lib/auth';
+import { useSockit } from '@sockit/client';
+import { CRUDResponse } from '@sockit/types';
+
+export default function PostsListPage() {
+	const [posts, setPosts] = useState<Post[]>([]);
+	const { token } = useSession();
+	const { subscribe, unsubscribe, emit } = useSockit();
+
+	useEffect() => {
+		// Subscribe to get posts announcements when the component mounts.
+		subscribe(
+			"posts", 
+			{ token },
+			(action: string, data: Post) => {
+			    if (action === 'create') {
+				    setPosts((prev) => [...prev, ...data]);
+			    }
+			    if (action === 'update') {
+				    // ...
+			    }
+			    if (action === 'delete') {
+				    // ...
+			    }
+		    }
+		);
+
+		// Get initial posts data.
+		emit("posts:readMany", {},
+			(response: CRUDResponse<Post[]>) => {
+				setPosts(response.data);
+			}
+		);
+		
+		// Clear the subscription when the component unmounts.
+		return (() => {
+			unsubscribe('posts');
+		});
+	}
+return (
+	<main>
+		{ posts.forEach((post) => (
+			<div key={post.id}>
+				<h2>{post.title}</h2>
+				<p>{post.content}</p>
+			</div>
+		)) }
+	</main>
+)
+}
+```
+
+#### Create a new post
+```tsx
+'use client';
+import { useState } from 'React';
+import { Post } from '@lib/database'
+import { useSockit } from '@sockit/client'
+
+export default function NewPost() {
+	const [title, setTitle] = useState('');
+	const [content, setContent] = useState('');
+	const [status, setStatus] = useState<'loading' | 'error' | 'success' | ''>('');
+	const [newPost, setNewPost] = useState<Post[] | null>(null);
+	const { emit } = useSockit();
+
+	function handleSubmit() {
+		setStatus('loading');
+		setNewPost(null);
+		// Emit the posts:create request, on submit, with the new post details.
+		emit('posts:create', { title, content }, 
+			(response: CRUDResponse<Post>) => {
+				if (response.success) {
+					setNewPost(response.data);
+					setStatus('success');
+				} else {
+					setStatus('error');
+				}
+		});
+	}
+
+return (
+	<main>
+		<input
+			placeholder='Title'
+			value={title}
+			onChange={(e) => { setTitle(e.currentTarget.value) }}
+			disabled={status === 'loading'}
+		/>
+		<textarea
+			placeholder='Content'
+			value={content}
+			onChange={(e) => { setContent(e.currentTarget.value) }}
+			disabled={status === 'loading'}
+		/>
+		<button 
+			onClick={handleSubmit}
+			disabled={status === 'loading'}
+		>Submit</button>
+		{status === 'success' &&
+			<div>
+				<p>Post created successfuly!</p>
+				<a href={`/posts/${newPost.id}`}>View here.</a>
+			</div>
+		}
+		{status === 'error' && <p>There was an error!</p>}
+	</main>
+)
+}
+
+```

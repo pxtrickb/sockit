@@ -1,0 +1,23 @@
+{
+    "name": "@sockit/cli",
+    "version": "0.1.0",
+    "main": "bin.cjs",
+    "types": "dist/index.d.ts",
+    "bin": {
+        "sockit": "bin.cjs"
+    },
+    "type": "commonjs",
+    "files": [
+        "dist",
+        "bin.cjs"
+    ],
+    "scripts": {
+        "build": "tsc -p tsconfig.json"
+    },
+    "dependencies": {
+        "@sockit/server": "*",
+        "@sockit/types": "*",
+        "chalk": "^5.4.1",
+        "commander": "^14.0.0"
+    }
+}
